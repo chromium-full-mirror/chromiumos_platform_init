@@ -13,6 +13,9 @@ set +e
 usage_help() {
   echo "Usage: $0 mode terminal [arg ...]
 
+  warn_dev: Message for warning about developer mode on normal firmware.
+            Arg #1: (optional, default=30) Countdown in seconds before continue
+
   enter_dev: Message for entering developer mode from non-dev.
              Arg #1: (optional, default=30) Countdown in seconds before continue
 
@@ -26,6 +29,101 @@ usage_help() {
              Arg #1: (optional) Image file to show.
 "
 }
+
+# Prints the two byte hex code of the matched char or
+# exists non-zero on timeout.  It reads from the current tty.
+# To override, call it as follows,
+#   match_char_timeout args < "$STDOUT"
+#
+# Arguments: time_in_seconds two_byte_hex_match_1 two_byte_hex_match_2 ...
+match_char_timeout() {
+  local delay_secs="$1"
+  shift
+
+  local input=''
+  local match=''
+  local start_time=$(date +%s)
+  local stop_time=$((start_time + delay_secs))
+  local tty_config=$(stty -g)
+  stty raw -echo
+  while [ $delay_secs -gt 0 ]; do
+    input=$(timeout -s KILL ${delay_secs}s head -c 1)
+    [ $? -eq 137 ] && break  # Timed out.
+    input=$(printf "%02x" "'$input")
+    for char in "$@"; do
+      if [ "$input" = "$char" ]; then
+        match="$input"
+        break
+      fi
+    done
+    [ -n "$match" ] && break
+    delay_secs=$((stop_time - $(date +%s) ))
+  done
+  # Restores the tty's settings.
+  stty $tty_config
+
+  [ -z "$match" ] && return 1
+  printf "$match"
+  return 0
+}
+
+# Prints message when in developer mode
+# Argument: time to countdown (in seconds)
+mode_warn_dev() {
+  local delay_secs="${1:-30}"
+  # Don't show a broken/partial background image.
+  tput clear > "$STDOUT"
+  echo '
+
+
+
+
+
+
+                        __________________________
+                       |.------------------------.|
+                       ||                        ||
+                       ||    (_)          (_)    ||
+                       ||                        ||
+                       ||       __________       ||
+                       ||     /            \     ||
+                       ||________________________||
+                      / __/___/_____________\__\__ \
+                     /               _              \
+                    /        /_______\ \_____\       \
+                   /__________________\ \_____________\
+                   \___________________\ \____________/
+                                        \ \_-_-_-.
+                                      /|         |
+                                     |  |        |
+                                       \         |
+                                        \_______/
+
+                   Chrome OS verification is turned off.
+                     Press space to begin recovery.
+  ' >"$STDOUT"
+  # TODO(wad) Use the developer mode firmware image
+
+  # Read a space bar or Ctrl+D or timeout.
+  local input=$(match_char_timeout "$delay_secs" 04 20 < "$STDOUT")
+  local exit_code=$?
+  tput clear > "$STDOUT"
+  # If we timed out, we're done.
+  [ $exit_code -ne 0 ] && return 0
+  case "$input" in
+    "04")  # Ctrl+D
+      # Done.
+      ;;
+    "20")  # Spacebar
+      crossystem recovery_request=1
+      # TODO(rspangler,vb) remove when reboot_mode is gone.
+      reboot_mode --recovery=1
+      reboot
+      ;;
+  esac
+  return 0
+}
+
 
 # Prints message when entering developer mode
 # Argument: time to countdown (in seconds)
@@ -56,7 +154,11 @@ mode_enter_dev() {
     Preparing your system for developer mode.
     Please wait 5 - 10 minutes and DO NOT POWER OFF . . .
     The system will reboot when complete.
+
+    On reboot, press Ctrl+Alt+[->] (F2) for further instruction.
   " >"$STDOUT"
+  # TODO(wad,wfrichar) Request a root password here.
+  # TODO(wad,reinauer) Inform the user of chromeos-firmwareupdate --mode=todev
 }
 
 # Prints message when leaving developer mode
@@ -108,7 +210,7 @@ main() {
   fi
 
   case "$mode" in
-    "enter_dev" | "leave_dev" | "update_firmware" | "wipe" )
+    "warn_dev" | "enter_dev" | "leave_dev" | "update_firmware" | "wipe" )
       mode_"$mode" "$@"
       ;;
     * )
