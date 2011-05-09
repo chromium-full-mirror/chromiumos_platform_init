@@ -190,7 +190,7 @@ mode_wipe() {
 
   if [ -s "$splash_file" ] && type ply-image >/dev/null 2>&1; then
     # Do not use background execution because this file is going to be wiped.
-    ply-image "$splash_file"
+    ply-image "$splash_file" 0 0
   else
     echo "    Erasing stateful partition..." >"$STDOUT"
   fi
