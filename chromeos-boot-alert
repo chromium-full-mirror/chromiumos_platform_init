@@ -6,6 +6,10 @@
 
 # Provides alert messages in boot stage, called by chromeos_startup.
 
+# Two instances of this script should never be run in parallel: the alert
+# animations will fight with each other, and there is a potential race in the
+# emission of the boot-alert-request signal (see http://crosbug.com/33838).
+
 # Since this script only provides messages, never abort.
 set +e
 
@@ -322,7 +326,13 @@ main() {
   shift
   shift
 
-  # light-up the screen if possible
+  # Wait until the boot-alert-ready abstract job has started, indicating that
+  # it's safe to display an alert onscreen.
+  if ! initctl status boot-alert-ready | grep -q running; then
+    initctl emit boot-alert-request
+  fi
+
+  # Light up the screen if possible.
   if [ -x /usr/sbin/lightup_screen ]; then
     /usr/sbin/lightup_screen >/dev/null 2>&1
   fi
