@@ -282,23 +282,30 @@ done
 # /mnt/stateful_partition above.
 mount_or_fail -n --bind /mnt/stateful_partition/home /home
 
-# Create, possibly migrate from, the unencrypted stateful partition,
-# and bind mount the /var and /home/chronos mounts from the encrypted
-# filesystem /mnt/stateful_partition/encrypted, all managed by the
-# "mount-encrypted" helper.
-# Since /var is managed by mount-encrypted, it should not be created
-# in the unencrypted stateful partition. Its mount point in the root
-# filesystem exists already from the rootfs image.
-# Since /home is still mounted from the unencrypted stateful partition,
-# having /home/chronos already doesn't matter. It will be created by
-# mount-encrypted if it is missing.
-# These mounts inherit nodev,noexec,nosuid from the encrypted filesystem
-# /mnt/stateful_partition/encrypted.
-remember_mount /var
-remember_mount /home/chronos
-mount-encrypted ${IS_FACTORY_MODE:+factory} >/tmp/mount-encrypted.log 2>&1
-if [ $? -ne 0 ]; then
+if [ -z "$IS_FACTORY_MODE" ]; then
+  # Create, possibly migrate from, the unencrypted stateful partition,
+  # and bind mount the /var and /home/chronos mounts from the encrypted
+  # filesystem /mnt/stateful_partition/encrypted, all managed by the
+  # "mount-encrypted" helper.
+  # Since /var is managed by mount-encrypted, it should not be created
+  # in the unencrypted stateful partition. Its mount point in the root
+  # filesystem exists already from the rootfs image.
+  # Since /home is still mounted from the unencrypted stateful partition,
+  # having /home/chronos already doesn't matter. It will be created by
+  # mount-encrypted if it is missing.
+  # These mounts inherit nodev,noexec,nosuid from the encrypted filesystem
+  # /mnt/stateful_partition/encrypted.
+  remember_mount /var
+  remember_mount /home/chronos
+  mount-encrypted >/tmp/mount-encrypted.log 2>&1
+  if [ $? -ne 0 ]; then
     cleanup_mounts
+  fi
+else
+  # Create and mount /var.  This mount inherits nodev,noexec,nosuid from
+  # /mnt/stateful_partition above.
+  mkdir -p -m 0755 /mnt/stateful_partition/var
+  mount_or_fail -n --bind /mnt/stateful_partition/var /var
 fi
 
 # Make sure required /var subdirectories exist.
